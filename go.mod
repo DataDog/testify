@@ -9,7 +9,7 @@ require (
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/protobuf v1.5.0
 	github.com/pmezard/go-difflib v1.0.0
-	github.com/stretchr/objx v0.5.2
+	github.com/stretchr/objx v0.5.3
 	google.golang.org/protobuf v1.28.1
 	gopkg.in/yaml.v3 v3.0.1
 )
