@@ -19,6 +19,7 @@ import (
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/pmezard/go-difflib/difflib"
+	"google.golang.org/protobuf/proto"
 
 	// Wrapper around gopkg.in/yaml.v3
 	"github.com/stretchr/testify/assert/yaml"
@@ -61,14 +62,55 @@ type Comparison func() (success bool)
 // ObjectsAreEqual determines if two objects are considered equal.
 //
 // This function does no assertion of any kind.
-func ObjectsAreEqual(expected, actual interface{}) bool {
+func ObjectsAreEqual(expected, actual interface{}) (eq bool) {
 	if expected == nil || actual == nil {
 		return expected == actual
 	}
 
+	// check v2 protobufs
+	if exp, ok := expected.(proto.Message); ok {
+		if act, ok := actual.(proto.Message); ok {
+			return proto.Equal(exp, act)
+		}
+	}
+
 	exp, ok := expected.([]byte)
 	if !ok {
-		return reflect.DeepEqual(expected, actual)
+		if eq = reflect.DeepEqual(expected, actual); !eq {
+			// 🚨HACK ALERT!🚨
+			// Sometimes folks pass _slices_ of protobufs to testify, which will get past
+			// our checks above and return false here.
+			// This sad hack checks if the passed arguments are slices. If so, it compares
+			// each item one by one to catch the protobuf check above.
+			// Definitely not great but we should track how many times this helps.
+			expValue := reflect.ValueOf(expected)
+			expIsSlice := expValue.Kind() == reflect.Slice
+			actValue := reflect.ValueOf(actual)
+			actIsSlice := actValue.Kind() == reflect.Slice
+			if (actIsSlice && expIsSlice) &&
+				(expValue.Len() == actValue.Len()) {
+				var brokeLoop bool
+			sliceLoop:
+				for i := 0; i < expValue.Len(); i++ {
+					switch expValue.Index(i).Kind() {
+					case reflect.Pointer:
+						// give up for anything not a pointer
+						// (any slice of protobufs should be a slice of pointers)
+					default:
+						brokeLoop = true
+						break sliceLoop
+					}
+					if !ObjectsAreEqual(
+						expValue.Index(i).Interface(),
+						actValue.Index(i).Interface()) {
+						return false
+					}
+				}
+				return !brokeLoop
+			}
+			return false
+		}
+		return true
 	}
 
 	act, ok := actual.([]byte)
